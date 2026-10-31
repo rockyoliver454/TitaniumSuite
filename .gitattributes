@@ -1,0 +1,5 @@
+*.sh   text eol=lf
+*.dat  -text
+*.ad?  text eol=lf
+*.md   text eol=lf
+*.gpr  text eol=lf

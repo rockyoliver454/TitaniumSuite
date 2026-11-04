@@ -7,7 +7,7 @@ with X11; use X11;
 package body Session_Persist is
 
    Magic_Value   : constant Unsigned_32 := 16#54494D53#; -- "TIMS"
-   Format_Version : constant Unsigned_32 := 1;
+   Format_Version : constant Unsigned_32 := 2;
 
    type Session_Header is record
       Magic             : Unsigned_32 := Magic_Value;
@@ -23,6 +23,10 @@ package body Session_Persist is
       Workspace    : Unsigned_32 := 1;
       Is_Floating  : Unsigned_32 := 0;
       Height_Ratio : Float := 1.0;
+      Float_X      : Integer_32  := 0;
+      Float_Y      : Integer_32  := 0;
+      Float_W      : Unsigned_32 := 0;
+      Float_H      : Unsigned_32 := 0;
    end record;
 
    type Client_Store is array (1 .. WM_State.Max_Clients) of Session_Client;
@@ -95,6 +99,10 @@ package body Session_Persist is
                         E.Is_Floating := 0;
                      end if;
                      E.Height_Ratio := WM_State.Clients (I).Height_Ratio;
+                     E.Float_X := Integer_32 (WM_State.Clients (I).Float_X);
+                     E.Float_Y := Integer_32 (WM_State.Clients (I).Float_Y);
+                     E.Float_W := Unsigned_32 (WM_State.Clients (I).Float_W);
+                     E.Float_H := Unsigned_32 (WM_State.Clients (I).Float_H);
                      Session_Client'Write (S, E);
                      Written := Written + 1;
                   end;
@@ -215,7 +223,23 @@ package body Session_Persist is
             end if;
             WM_State.Clients (Idx).Is_Floating := Pending (I).Is_Floating /= 0;
             WM_State.Clients (Idx).Height_Ratio := Pending (I).Height_Ratio;
+            WM_State.Clients (Idx).Float_X := Integer (Pending (I).Float_X);
+            WM_State.Clients (Idx).Float_Y := Integer (Pending (I).Float_Y);
+            WM_State.Clients (Idx).Float_W := unsigned (Pending (I).Float_W);
+            WM_State.Clients (Idx).Float_H := unsigned (Pending (I).Float_H);
             WM_State.Clamp_Height_Ratio (Idx);
+            --  Restore the saved floating geometry now (window is still
+            --  unmapped; X applies the rect when it maps).
+            if Pending (I).Is_Floating /= 0
+              and then Pending (I).Float_W > 0
+              and then Pending (I).Float_H > 0
+            then
+               X11.XMoveResizeWindow (
+                  X11.Global_Display, Win,
+                  int (Pending (I).Float_X), int (Pending (I).Float_Y),
+                  unsigned (Pending (I).Float_W),
+                  unsigned (Pending (I).Float_H));
+            end if;
             return;
          end if;
       end loop;

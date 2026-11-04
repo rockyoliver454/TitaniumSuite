@@ -309,6 +309,14 @@ package X11 is
       with Import, Convention => C, External_Name => "XSelectInput";
    procedure XNextEvent (Display : Display_Ptr; Event : out XEvent)
       with Import, Convention => C, External_Name => "XNextEvent";
+   --  Returns nonzero if a queued event of Event_Type was removed into
+   --  Event_Return; used to drain stale MotionNotify during drags.
+   function XCheckTypedEvent (
+      Display      : Display_Ptr;
+      Event_Type   : int;
+      Event_Return : access XEvent
+   ) return int
+      with Import, Convention => C, External_Name => "XCheckTypedEvent";
    procedure XMapWindow (Display : Display_Ptr; W : Window)
       with Import, Convention => C, External_Name => "XMapWindow";
    procedure XUnmapWindow (Display : Display_Ptr; W : Window)

@@ -66,6 +66,10 @@ package WM_State is
       Is_Active       : Boolean        := False;
       Color_Idx       : Integer        := 0;
       Is_Floating     : Boolean        := False;
+      Float_X         : Integer        := 0;
+      Float_Y         : Integer        := 0;
+      Float_W         : unsigned       := 0;
+      Float_H         : unsigned       := 0;
       Height_Ratio    : Float          := 1.0;
       Workspace       : Workspace_Type := 1;
       Supports_Delete : Boolean        := False;
@@ -79,6 +83,10 @@ package WM_State is
       Is_Active       => False,
       Color_Idx       => 0,
       Is_Floating     => False,
+      Float_X         => 0,
+      Float_Y         => 0,
+      Float_W         => 0,
+      Float_H         => 0,
       Height_Ratio    => 1.0,
       Workspace       => 1,
       Supports_Delete => False,

@@ -179,13 +179,21 @@ procedure Main is
                Geo_X, Geo_Y : int;
                Geo_W, Geo_H, Geo_B, Geo_D : unsigned;
 
-               Motion_Event : XEvent;
+               Motion_Event : aliased XEvent;
+               Last_Motion  : XEvent;
                Res          : int;
-               pragma Unreferenced (Res);
+               Drained      : int;
 
                Target_Client_Idx : Client_Index;
                Target_Win        : Window;
                Drag_Active       : Boolean;
+               Drag_Moved        : Boolean := False;
+               --  Pointer must travel past this before a window leaves
+               --  the tile: a bare Alt+click is focus only, not a float.
+               Drag_Threshold    : constant int := 4;
+               --  Bounded drain for motion compression (MISRA: bounded loop).
+               Max_Drain         : constant int := 256;
+               pragma Unreferenced (Res);
             begin
                Target_Client_Idx := WM_State.Find_Client (B_Event.Win);
                if Target_Client_Idx /= 0 then
@@ -198,7 +206,6 @@ procedure Main is
                      null;
                   else
                      Target_Win := WM_State.Clients (Target_Client_Idx).ID;
-                     WM_State.Clients (Target_Client_Idx).Is_Floating := True;
                      Res := XQueryPointer (
                         Display, B_Event.Root, Root_Win, Child_Win,
                         Root_X, Root_Y, Win_X, Win_Y, Mask_Out);
@@ -241,38 +248,103 @@ procedure Main is
                            if WM_State.Find_Client (Target_Win) = 0 then
                               Drag_Active := False;
                            else
+                              --  Motion compression: X queues a MotionNotify
+                              --  per pixel-step and the app redraw takes
+                              --  longer than that; draining keeps only the
+                              --  newest position so the window tracks the
+                              --  pointer instead of lagging behind it.
+                              Last_Motion := Motion_Event;
+                              for J in 1 .. Max_Drain loop
+                                 Drained := XCheckTypedEvent (
+                                    Display, 6, Motion_Event'Access);
+                                 exit when Drained = 0;
+                                 Last_Motion := Motion_Event;
+                              end loop;
                               declare
-                                 ME : constant XKeyEvent := To_Key (Motion_Event);
+                                 ME : constant XKeyEvent :=
+                                   To_Key (Last_Motion);
                                  Delta_X : constant int := ME.X_Root - Root_X;
                                  Delta_Y : constant int := ME.Y_Root - Root_Y;
                                  New_W   : int;
                                  New_H   : int;
                               begin
-                                 if B_Event.Code = 1 then
-                                    XMoveResizeWindow (
-                                       Display, Target_Win,
-                                       Geo_X + Delta_X, Geo_Y + Delta_Y,
-                                       Geo_W, Geo_H);
-                                    XMoveResizeWindow (
-                                       Display,
-                                       WM_State.Clients (Target_Client_Idx).Tab_ID,
-                                       Geo_X + Delta_X,
-                                       (Geo_Y + Delta_Y) - 20,
-                                       Geo_W, 20);
-                                 elsif B_Event.Code = 3 then
-                                    New_W := int (Geo_W) + Delta_X;
-                                    New_H := int (Geo_H) + Delta_Y;
-                                    if New_W > 50 and New_H > 50 then
+                                 --  Float on first real movement only.
+                                 if not Drag_Moved
+                                   and then
+                                     (WM_State.Clients
+                                        (Target_Client_Idx).Is_Floating
+                                      or else abs Delta_X > Drag_Threshold
+                                      or else abs Delta_Y > Drag_Threshold)
+                                 then
+                                    Drag_Moved := True;
+                                    if not WM_State.Clients
+                                      (Target_Client_Idx).Is_Floating
+                                    then
+                                       WM_State.Clients
+                                         (Target_Client_Idx).Is_Floating :=
+                                           True;
+                                       --  Reflow siblings around the freed
+                                       --  slot, then keep the dragged
+                                       --  window on top.
+                                       Layout.Tile_Windows (
+                                          WM_State.Screen_Width,
+                                          WM_State.Screen_Height);
+                                       WM_State.Apply_Focus_X11;
+                                       XRaiseWindow (Display, Target_Win);
+                                    end if;
+                                 end if;
+
+                                 if Drag_Moved then
+                                    if B_Event.Code = 1 then
                                        XMoveResizeWindow (
                                           Display, Target_Win,
-                                          Geo_X, Geo_Y,
-                                          unsigned (New_W), unsigned (New_H));
+                                          Geo_X + Delta_X, Geo_Y + Delta_Y,
+                                          Geo_W, Geo_H);
                                        XMoveResizeWindow (
                                           Display,
                                           WM_State.Clients
                                             (Target_Client_Idx).Tab_ID,
-                                          Geo_X, Geo_Y - 20,
-                                          unsigned (New_W), 20);
+                                          Geo_X + Delta_X,
+                                          (Geo_Y + Delta_Y) - 20,
+                                          Geo_W, 20);
+                                       WM_State.Clients
+                                         (Target_Client_Idx).Float_X :=
+                                           Integer (Geo_X + Delta_X);
+                                       WM_State.Clients
+                                         (Target_Client_Idx).Float_Y :=
+                                           Integer (Geo_Y + Delta_Y);
+                                       WM_State.Clients
+                                         (Target_Client_Idx).Float_W := Geo_W;
+                                       WM_State.Clients
+                                         (Target_Client_Idx).Float_H := Geo_H;
+                                    elsif B_Event.Code = 3 then
+                                       New_W := int (Geo_W) + Delta_X;
+                                       New_H := int (Geo_H) + Delta_Y;
+                                       if New_W > 50 and New_H > 50 then
+                                          XMoveResizeWindow (
+                                             Display, Target_Win,
+                                             Geo_X, Geo_Y,
+                                             unsigned (New_W),
+                                             unsigned (New_H));
+                                          XMoveResizeWindow (
+                                             Display,
+                                             WM_State.Clients
+                                               (Target_Client_Idx).Tab_ID,
+                                             Geo_X, Geo_Y - 20,
+                                             unsigned (New_W), 20);
+                                          WM_State.Clients
+                                            (Target_Client_Idx).Float_W :=
+                                              unsigned (New_W);
+                                          WM_State.Clients
+                                            (Target_Client_Idx).Float_H :=
+                                              unsigned (New_H);
+                                          WM_State.Clients
+                                            (Target_Client_Idx).Float_X :=
+                                              Integer (Geo_X);
+                                          WM_State.Clients
+                                            (Target_Client_Idx).Float_Y :=
+                                              Integer (Geo_Y);
+                                       end if;
                                     end if;
                                  end if;
                               end;
@@ -280,9 +352,13 @@ procedure Main is
                         end if;
                      end loop;
 
-                     Layout.Tile_Windows (
-                        WM_State.Screen_Width, WM_State.Screen_Height);
-                     WM_State.Apply_Focus_X11;
+                     --  Only reflow if the pointer actually moved: a plain
+                     --  Alt+click changes focus without tearing the layout.
+                     if Drag_Moved then
+                        Layout.Tile_Windows (
+                           WM_State.Screen_Width, WM_State.Screen_Height);
+                        WM_State.Apply_Focus_X11;
+                     end if;
                   end if;
                end if;
             end;

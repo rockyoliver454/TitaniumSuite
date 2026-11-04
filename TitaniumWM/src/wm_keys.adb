@@ -60,6 +60,8 @@ package body WM_Keys is
          XKeysymToKeycode (Global_Display, XK_space), Mod1Mask or ControlMask);
       Grab_Key_Variants (
          XKeysymToKeycode (Global_Display, XK_Escape), Mod1Mask or ShiftMask);
+      -- Alt+F1: TitaniumHelp key-reference popup (WASM-produced content)
+      Grab_Key_Variants (XKeysymToKeycode (Global_Display, XK_F1), Mod1Mask);
 
       -- Multi-monitor: focus / move across screens
       Grab_Key_Variants (XKeysymToKeycode (Global_Display, XK_comma), Mod1Mask);
@@ -104,6 +106,8 @@ package body WM_Keys is
         XKeysymToKeycode (Global_Display, XK_comma);
       Code_Period : constant KeyCode :=
         XKeysymToKeycode (Global_Display, XK_period);
+      Code_Help : constant KeyCode :=
+        XKeysymToKeycode (Global_Display, XK_F1);
 
       type Code_Array is array (1 .. 12) of KeyCode;
       WS_Codes : constant Code_Array := (
@@ -288,6 +292,14 @@ package body WM_Keys is
             pragma Unreferenced (Result);
          begin
             Result := System_Call (To_C ("titaniumrun &"));
+         end;
+
+      elsif K_Event.Code = Code_Help then
+         declare
+            Result : int;
+            pragma Unreferenced (Result);
+         begin
+            Result := System_Call (To_C ("titaniumhelp &"));
          end;
 
       elsif K_Event.Code = Code_Enter then

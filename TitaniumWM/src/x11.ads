@@ -48,6 +48,7 @@ package X11 is
    XK_Right     : constant KeySym := 16#FF53#;
    XK_Down      : constant KeySym := 16#FF54#;
    XK_Escape    : constant KeySym := 16#FF1B#;
+   XK_F1        : constant KeySym := 16#FFBE#;
    -- Number Keys for Workspaces
    XK_1         : constant KeySym := 16#0031#;
    XK_2         : constant KeySym := 16#0032#;

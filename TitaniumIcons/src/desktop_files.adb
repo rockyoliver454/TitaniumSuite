@@ -144,6 +144,9 @@ package body Desktop_Files is
             if E.Valid and then not E.Hidden then
                Count := Count + 1;
                Table (Count) := E;
+               Table (Count).Base := Name_String.To_Bounded_String
+                 (Ada.Directories.Simple_Name (Full));
+               Table (Count).Path := Exec_String.To_Bounded_String (Full);
             end if;
          end;
       end loop;
@@ -158,5 +161,70 @@ package body Desktop_Files is
          end if;
          --  best-effort: return what we parsed so far
    end Load_Desktop_Icons;
+
+   --  Rewrite Key=Value inside [Desktop Entry], preserving all other
+   --  lines.  Streams to a temp file then renames over the original.
+   function Set_Key
+     (Path  : String;
+      Key   : String;
+      Value : String) return Boolean
+   is
+      use Ada.Text_IO;
+      Tmp       : constant String := Path & ".ti-tmp";
+      Src, Dst  : File_Type;
+      Line      : String (1 .. 4096);
+      Len       : Natural;
+      In_Sect   : Boolean := False;
+      Wrote_Key : Boolean := False;
+   begin
+      Open (Src, In_File, Path);
+      Create (Dst, Out_File, Tmp);
+      while not End_Of_File (Src) loop
+         Get_Line (Src, Line, Len);
+         if Len > 0 and then Line (1) = '[' then
+            --  leaving [Desktop Entry] without the key: append it
+            if In_Sect and then not Wrote_Key
+              and then not (Len >= 15
+                            and then Line (1 .. 15) = "[Desktop Entry]")
+            then
+               Put_Line (Dst, Key & "=" & Value);
+               Wrote_Key := True;
+            end if;
+            In_Sect := Len >= 15
+                       and then Line (1 .. 15) = "[Desktop Entry]";
+            Put_Line (Dst, Line (1 .. Len));
+         elsif In_Sect and then Len > Key'Length
+           and then Line (1 .. Key'Length) = Key
+           and then Line (Key'Length + 1) = '='
+         then
+            if not Wrote_Key then
+               Put_Line (Dst, Key & "=" & Value);
+               Wrote_Key := True;
+            end if;
+            --  skip duplicate key lines silently
+         else
+            Put_Line (Dst, Line (1 .. Len));
+         end if;
+      end loop;
+      if In_Sect and then not Wrote_Key then
+         Put_Line (Dst, Key & "=" & Value);
+      end if;
+      Close (Src);
+      Close (Dst);
+      Ada.Directories.Rename (Tmp, Path);
+      return True;
+   exception
+      when others =>
+         begin
+            if Is_Open (Src) then Close (Src); end if;
+            if Is_Open (Dst) then Close (Dst); end if;
+            if Ada.Directories.Exists (Tmp) then
+               Ada.Directories.Delete_File (Tmp);
+            end if;
+         exception
+            when others => null;
+         end;
+         return False;
+   end Set_Key;
 
 end Desktop_Files;

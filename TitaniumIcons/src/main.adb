@@ -10,6 +10,8 @@ with Interfaces.C;          use Interfaces.C;
 with Interfaces.C.Strings;
 with System;
 with Ada.Unchecked_Conversion;
+with Ada.Real_Time;    use Ada.Real_Time;
+with Ada.Text_IO;
 
 with X11;           use X11;
 with Desktop_Files; use Desktop_Files;
@@ -32,6 +34,18 @@ procedure Main is
    C_Box_Hi   : constant unsigned_long := 16#00304860#;  --  glyph square
    C_Text     : constant unsigned_long := 16#00E8E8E8#;  --  near-white
    C_Text_Hi  : constant unsigned_long := 16#00FFD080#;  --  accent glyph
+
+   --------------------------------------------------------------------------
+   --  Click flash — curve comes from /opt/alb/flash.wasm via albwasm
+   --  (flash.alb is the ALB-authored reference).  Sampled at 15 ms/frame.
+   --------------------------------------------------------------------------
+   Flash_Ms    : constant := 240;
+   Frame_Ms    : constant := 15;
+   Num_Frames  : constant := Flash_Ms / Frame_Ms;   --  16
+   Flash_Tbl   : array (0 .. Num_Frames - 1) of unsigned_long;
+   Flash_Start : array (1 .. Desktop_Files.Max_Icons) of Time;
+   Flashing    : array (1 .. Desktop_Files.Max_Icons) of Boolean :=
+                   (others => False);
 
    --------------------------------------------------------------------------
    --  State (bounded — never grows past Desktop_Files.Max_Icons)
@@ -74,12 +88,69 @@ procedure Main is
                    Buf, Interfaces.C.int (L1'Length));
    end Draw_Label;
 
-   procedure Paint_Icon (I : Positive) is
+   --  Blend Base toward white by Level (0..255) per channel.
+   function Blend_White (Base : unsigned_long; Level : Natural)
+      return unsigned_long
+   is
+      L : constant unsigned_long := unsigned_long (Level);
+      function Ch (Shift : Natural) return unsigned_long is
+         B : constant unsigned_long := (Base / (2 ** Shift)) and 16#FF#;
+      begin
+         return B + (255 - B) * L / 255;
+      end Ch;
+   begin
+      return (Ch (0) and 16#FF#)
+         or (Ch (8) and 16#FF#) * 16#100#
+         or (Ch (16) and 16#FF#) * 16#10000#;
+   end Blend_White;
+
+   --  WASM fallback curve (mirrors flash.alb) when the module can't run.
+   function Curve (T : Natural) return Natural is
+   begin
+      if T < 30 then
+         return T * 255 / 30;
+      elsif T < 60 then
+         return 255;
+      elsif T < 240 then
+         return 255 - (T - 60) * 255 / 180;
+      else
+         return 0;
+      end if;
+   end Curve;
+
+   --  Pull the intensity table from /opt/alb/flash.wasm through the
+   --  albwasm shim (16 samples, one per frame).  Falls back to Curve.
+   procedure Load_Flash_Table is
+      Rc : Interfaces.C.int;
+      pragma Unreferenced (Rc);
+      F  : Ada.Text_IO.File_Type;
+      V  : Natural;
+   begin
+      Rc := System_Call (To_C
+        ("for t in 0 15 30 45 60 75 90 105 120 135 150 165 180 195 210 225; do " &
+         "albwasm /opt/alb/flash.wasm frame $t; done > /tmp/ti_flash 2>/dev/null"));
+      begin
+         Ada.Text_IO.Open (F, Ada.Text_IO.In_File, "/tmp/ti_flash");
+         for I in Flash_Tbl'Range loop
+            V := Natural'Value (Ada.Text_IO.Get_Line (F));
+            Flash_Tbl (I) := Blend_White (C_Box, (if V > 255 then 255 else V));
+         end loop;
+         Ada.Text_IO.Close (F);
+      exception
+         when others =>
+            for I in Flash_Tbl'Range loop
+               Flash_Tbl (I) := Blend_White (C_Box, Curve (I * Frame_Ms));
+            end loop;
+      end;
+   end Load_Flash_Table;
+
+   procedure Paint_Icon_At (I : Positive; Bg : unsigned_long) is
       W  : constant Window := Wins (I);
       Nm : constant String := Name_String.To_String (Icons (I).Name);
       Glyph_Buf : Interfaces.C.char_array (0 .. 7);
    begin
-      XClearWindow (Dpy, W);
+      XSetForeground (Dpy, Icon_Gc, Bg);
+      XFillRectangle (Dpy, W, Icon_Gc, 0, 0, unsigned (Icon_W), unsigned (Icon_H));
 
       --  glyph square: 28x28 centred, first letter of the name
       XSetForeground (Dpy, Icon_Gc, C_Box_Hi);
@@ -94,6 +165,11 @@ procedure Main is
       XSetForeground (Dpy, Icon_Gc, C_Text);
       Draw_Label (W, Nm);
       XFlush (Dpy);
+   end Paint_Icon_At;
+
+   procedure Paint_Icon (I : Positive) is
+   begin
+      Paint_Icon_At (I, C_Box);
    end Paint_Icon;
 
    --  Launch an Exec line.  .desktop field codes (%f, %u, ...) are
@@ -149,9 +225,11 @@ procedure Main is
    --------------------------------------------------------------------------
    --  Setup
    --------------------------------------------------------------------------
-   Attrs : aliased XSetWindowAttributes;
-   Ev    : XEvent;
-   Av    : XAnyEvent;
+   Attrs   : aliased XSetWindowAttributes;
+   Ev      : XEvent;
+   Av      : XAnyEvent;
+   Now     : Time;
+   Elapsed : Natural;
 
 begin
    Desktop_Files.Load_Desktop_Icons (Icons, Count);
@@ -174,6 +252,8 @@ begin
    Scr  := XDefaultScreen (Dpy);
    Root := XRootWindow (Dpy, Scr);
    Icon_Gc   := XDefaultGC (Dpy, Scr);
+
+   Load_Flash_Table;
 
    --  override-redirect: stays out of the WM's hands entirely
    Attrs := (Background_Pixmap   => 0,
@@ -223,25 +303,45 @@ begin
    XFlush (Dpy);
 
    --------------------------------------------------------------------------
-   --  Event loop
+   --  Event loop — polled so the click-flash can animate between events
    --------------------------------------------------------------------------
    loop
-      XNextEvent (Dpy, Ev);
-      if Ev.Type_Code = Expose then
-         Av := To_Any (Ev);
-         for I in 1 .. Count loop
-            if Wins (I) = Av.Win then
-               Paint_Icon (I);
+      while XPending (Dpy) > 0 loop
+         XNextEvent (Dpy, Ev);
+         if Ev.Type_Code = Expose then
+            Av := To_Any (Ev);
+            for I in 1 .. Count loop
+               if Wins (I) = Av.Win then
+                  Paint_Icon (I);
+               end if;
+            end loop;
+         elsif Ev.Type_Code = ButtonPress then
+            Av := To_Any (Ev);
+            for I in 1 .. Count loop
+               if Wins (I) = Av.Win then
+                  Launch (I);
+                  Flash_Start (I) := Clock;
+                  Flashing (I) := True;
+               end if;
+            end loop;
+         end if;
+      end loop;
+
+      --  animation tick (~66 fps while anything flashes)
+      Now := Clock;
+      for I in 1 .. Count loop
+         if Flashing (I) then
+            Elapsed := Natural (To_Duration (Now - Flash_Start (I)) * 1000.0);
+            if Elapsed >= Flash_Ms then
+               Flashing (I) := False;
+               Paint_Icon (I);   --  restore normal look
+            else
+               Paint_Icon_At (I, Flash_Tbl (Elapsed / Frame_Ms));
             end if;
-         end loop;
-      elsif Ev.Type_Code = ButtonPress then
-         Av := To_Any (Ev);
-         for I in 1 .. Count loop
-            if Wins (I) = Av.Win then
-               Launch (I);
-            end if;
-         end loop;
-      end if;
+         end if;
+      end loop;
+
+      delay 0.015;
    end loop;
 
 exception

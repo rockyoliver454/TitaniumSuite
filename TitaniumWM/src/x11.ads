@@ -328,6 +328,18 @@ package X11 is
       with Import, Convention => C, External_Name => "XDisplayHeight";
    procedure XRaiseWindow (Display : Display_Ptr; W : Window)
       with Import, Convention => C, External_Name => "XRaiseWindow";
+   --  Cursors (core cursor font glyph indices, <X11/cursorfont.h>)
+   XC_left_ptr : constant unsigned := 68;
+   function XCreateFontCursor (
+      Display : Display_Ptr;
+      Shape   : unsigned
+   ) return unsigned_long
+     with Import, Convention => C, External_Name => "XCreateFontCursor";
+   procedure XDefineCursor (
+      Display : Display_Ptr;
+      W       : Window;
+      Cursor  : unsigned_long
+   ) with Import, Convention => C, External_Name => "XDefineCursor";
    procedure XGrabButton (
       Display   : Display_Ptr;
       Button    : unsigned;

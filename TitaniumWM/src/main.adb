@@ -389,6 +389,11 @@ begin
       Display, Root,
       SubstructureRedirectMask or SubstructureNotifyMask or StructureNotifyMask);
 
+   --  Root window is created with NO cursor -> invisible pointer over
+   --  the bare desktop (and any window that doesn't set its own).
+   --  Give it the standard arrow; clients still override per-window.
+   XDefineCursor (Display, Root, XCreateFontCursor (Display, XC_left_ptr));
+
    WM_ICCCM.Init_Atoms;
    Session_Persist.Try_Load_Session;
    WM_Keys.Setup_Keys;

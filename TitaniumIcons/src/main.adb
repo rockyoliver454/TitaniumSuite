@@ -341,7 +341,13 @@ begin
          end if;
       end loop;
 
-      delay 0.015;
+      declare
+         Ts  : aliased Timespec := (0, 15_000_000);
+         Rc2 : Interfaces.C.int;
+         pragma Unreferenced (Rc2);
+      begin
+         Rc2 := NanoSleep (Ts'Access, null);
+      end;
    end loop;
 
 exception

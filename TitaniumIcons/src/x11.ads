@@ -169,4 +169,13 @@ package X11 is
    function System_Call (Command : char_array) return int
      with Import, Convention => C, External_Name => "system";
 
+   type Timespec is record
+      Tv_Sec  : Interfaces.C.long;
+      Tv_Nsec : Interfaces.C.long;
+   end record
+     with Convention => C_Pass_By_Copy;
+
+   function NanoSleep (Req, Rem : access Timespec) return int
+     with Import, Convention => C, External_Name => "nanosleep";
+
 end X11;

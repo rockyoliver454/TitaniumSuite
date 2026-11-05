@@ -175,7 +175,7 @@ package X11 is
    end record
      with Convention => C_Pass_By_Copy;
 
-   function NanoSleep (Req, Rem : access Timespec) return int
+   function NanoSleep (Req, Remaining : access Timespec) return int
      with Import, Convention => C, External_Name => "nanosleep";
 
 end X11;

@@ -10,7 +10,6 @@ with Interfaces.C;          use Interfaces.C;
 with Interfaces.C.Strings;
 with System;
 with Ada.Unchecked_Conversion;
-with Ada.Real_Time;    use Ada.Real_Time;
 with Ada.Text_IO;
 
 with X11;           use X11;
@@ -43,7 +42,7 @@ procedure Main is
    Frame_Ms    : constant := 15;
    Num_Frames  : constant := Flash_Ms / Frame_Ms;   --  16
    Flash_Tbl   : array (0 .. Num_Frames - 1) of unsigned_long;
-   Flash_Start : array (1 .. Desktop_Files.Max_Icons) of Time;
+   Flash_Start : array (1 .. Desktop_Files.Max_Icons) of Natural;
    Flashing    : array (1 .. Desktop_Files.Max_Icons) of Boolean :=
                    (others => False);
 
@@ -117,6 +116,16 @@ procedure Main is
          return 0;
       end if;
    end Curve;
+
+   --  Monotonic clock in ms (clock_gettime, CLOCK_MONOTONIC = 1).
+   function Now_Ms return Natural is
+      Ts : aliased Timespec;
+      Rc : Interfaces.C.int;
+      pragma Unreferenced (Rc);
+   begin
+      Rc := Clock_Gettime (1, Ts'Access);
+      return Natural (Ts.Tv_Sec) * 1000 + Natural (Ts.Tv_Nsec / 1_000_000);
+   end Now_Ms;
 
    --  Pull the intensity table from /opt/alb/flash.wasm through the
    --  albwasm shim (16 samples, one per frame).  Falls back to Curve.
@@ -228,7 +237,6 @@ procedure Main is
    Attrs   : aliased XSetWindowAttributes;
    Ev      : XEvent;
    Av      : XAnyEvent;
-   Now     : Time;
    Elapsed : Natural;
 
 begin
@@ -320,7 +328,7 @@ begin
             for I in 1 .. Count loop
                if Wins (I) = Av.Win then
                   Launch (I);
-                  Flash_Start (I) := Clock;
+                  Flash_Start (I) := Now_Ms;
                   Flashing (I) := True;
                end if;
             end loop;
@@ -328,10 +336,9 @@ begin
       end loop;
 
       --  animation tick (~66 fps while anything flashes)
-      Now := Clock;
       for I in 1 .. Count loop
          if Flashing (I) then
-            Elapsed := Natural (To_Duration (Now - Flash_Start (I)) * 1000.0);
+            Elapsed := Now_Ms - Flash_Start (I);
             if Elapsed >= Flash_Ms then
                Flashing (I) := False;
                Paint_Icon (I);   --  restore normal look

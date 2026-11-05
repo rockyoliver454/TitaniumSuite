@@ -178,4 +178,7 @@ package X11 is
    function NanoSleep (Req, Remaining : access Timespec) return int
      with Import, Convention => C, External_Name => "nanosleep";
 
+   function Clock_Gettime (Clock_Id : int; Ts : access Timespec) return int
+     with Import, Convention => C, External_Name => "clock_gettime";
+
 end X11;

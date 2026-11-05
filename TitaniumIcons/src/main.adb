@@ -10,7 +10,6 @@ with Interfaces.C;          use Interfaces.C;
 with Interfaces.C.Strings;
 with System;
 with Ada.Unchecked_Conversion;
-with GNAT.OS_Lib;
 
 with X11;           use X11;
 with Desktop_Files; use Desktop_Files;
@@ -97,66 +96,51 @@ procedure Main is
       XFlush (Dpy);
    end Paint_Icon;
 
-   --  Launch an Exec line.  Split on whitespace (bounded, ≤8 args).
+   --  Launch an Exec line.  .desktop field codes (%f, %u, ...) are
+   --  stripped, then the command runs detached via /bin/sh so PATH
+   --  lookup and quoting follow normal shell rules — the same pattern
+   --  TitaniumWM's key spawns use, and the only reliable exec route
+   --  in this environment.  The trailing '&' makes system() return
+   --  immediately and the child reparents to init, so no zombies.
    procedure Launch (I : Positive) is
-      Cmd  : constant String := Exec_String.To_String (Icons (I).Exec);
-      Args : GNAT.OS_Lib.Argument_List (1 .. 8);
-      N    : Natural := 0;
-      P    : GNAT.OS_Lib.Process_Id;
-      pragma Unreferenced (P);
-
-      procedure Push (Tok : String) is
-      begin
-         if N < Args'Length and then Tok'Length > 0 then
-            N := N + 1;
-            Args (N) := new String'(Tok);
-         end if;
-      end Push;
-
-      Start : Natural;
+      Cmd       : constant String := Exec_String.To_String (Icons (I).Exec);
+      Cmd_Buf   : String (1 .. 512);
+      Cmd_Len   : Natural := 0;
+      Skip_Next : Boolean := False;
+      Rc        : Interfaces.C.int;
+      pragma Unreferenced (Rc);
    begin
       if Cmd'Length = 0 then
          return;
       end if;
 
-      --  whitespace-split
-      Start := 0;
       for Ix in Cmd'Range loop
-         if Cmd (Ix) /= ' ' and then Cmd (Ix) /= ASCII.HT then
-            if Start = 0 then
-               Start := Ix;
+         if Skip_Next then
+            if Cmd (Ix) = '%' and then Cmd_Len < Cmd_Buf'Last then
+               Cmd_Len := Cmd_Len + 1;
+               Cmd_Buf (Cmd_Len) := '%';
             end if;
-         elsif Start /= 0 then
-            Push (Cmd (Start .. Ix - 1));
-            Start := 0;
+            Skip_Next := False;
+         elsif Cmd (Ix) = '%' then
+            Skip_Next := True;
+         elsif Cmd_Len < Cmd_Buf'Last then
+            Cmd_Len := Cmd_Len + 1;
+            Cmd_Buf (Cmd_Len) := Cmd (Ix);
          end if;
       end loop;
-      if Start /= 0 then
-         Push (Cmd (Start .. Cmd'Last));
-      end if;
 
-      if N = 0 then
+      if Cmd_Len = 0 then
          return;
       end if;
 
-      --  Terminal entries go through xterm -e; direct exec otherwise.
-      if Icons (I).Terminal then
-         declare
-            Full : GNAT.OS_Lib.Argument_List (1 .. N + 2);
-         begin
-            Full (1) := new String'("-e");
-            for J in 1 .. N loop
-               Full (J + 1) := Args (J);
-            end loop;
-            P := GNAT.OS_Lib.Non_Blocking_Spawn ("xterm", Full (1 .. N + 1));
-         end;
-      else
-         P := GNAT.OS_Lib.Non_Blocking_Spawn (Args (1).all, Args (2 .. N));
-      end if;
-
-      for J in 1 .. N loop
-         GNAT.OS_Lib.Free (Args (J));
-      end loop;
+      declare
+         Line : constant String :=
+           (if Icons (I).Terminal
+            then "xterm -e " & Cmd_Buf (1 .. Cmd_Len)
+            else Cmd_Buf (1 .. Cmd_Len)) & " &";
+      begin
+         Rc := System_Call (To_C (Line));
+      end;
    exception
       when others =>
          null;   --  spawn failure: icon stays, session lives

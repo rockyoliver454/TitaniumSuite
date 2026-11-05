@@ -165,4 +165,8 @@ package X11 is
       Window_Name  : Interfaces.C.Strings.chars_ptr)
      with Import, Convention => C, External_Name => "XStoreName";
 
+   --  libc
+   function System_Call (Command : char_array) return int
+     with Import, Convention => C, External_Name => "system";
+
 end X11;

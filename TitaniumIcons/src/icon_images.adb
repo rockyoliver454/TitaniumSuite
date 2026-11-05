@@ -26,7 +26,7 @@ package body Icon_Images is
       declare
          Sz : constant Natural := Natural (Ada.Streams.Stream_IO.Size (F));
          N  : constant Natural := Natural'Min (Sz, Max_File);
-         D  : constant Byte_Ptr := new Byte_Buf (0 .. N - 1);
+         D  : Byte_Ptr := new Byte_Buf (0 .. N - 1);
       begin
          while Pos < N and then not SIO.End_Of_File (F) loop
             Ada.Streams.Stream_Element'Read (S, E);
@@ -211,7 +211,7 @@ package body Icon_Images is
      (Path : String;
       Buf  : out Pixel_Buffer) return Boolean
    is
-      Data : constant Byte_Ptr := Read_File (Path);
+      Data : Byte_Ptr := Read_File (Path);
       Ok   : Boolean := False;
    begin
       Buf := (others => 0);

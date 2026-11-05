@@ -2,7 +2,6 @@ with Ada.Strings.Bounded;
 with Desktop_Files;
 
 package Layout_Store is
-   pragma SPARK_Mode (On);
 
    --  ~/.config/titaniumicons/layout.conf — the file a user backs up
    --  to keep icon positions and appearance.  Positions are stored

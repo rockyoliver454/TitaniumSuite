@@ -159,6 +159,24 @@ procedure Main is
    --  Helpers
    --------------------------------------------------------------------------
 
+   --  override-redirect template for menu/dialog/property windows
+   Base_Attrs : constant XSetWindowAttributes :=
+     (Background_Pixmap   => 0,
+      Background_Pixel    => 0,
+      Border_Pixmap       => 0,
+      Border_Pixel        => 0,
+      Bit_Gravity         => 0,
+      Win_Gravity         => 0,
+      Backing_Store       => 0,
+      Backing_Planes      => 0,
+      Backing_Pixel       => 0,
+      Save_Under          => 0,
+      Event_Mask          => 0,
+      Do_Not_Propagate    => 0,
+      Override_Redirect   => 1,
+      Colormap            => 0,
+      Cursor              => 0);
+
    function To_Any is new Ada.Unchecked_Conversion (XEvent, XAnyEvent);
    function To_Btn is new Ada.Unchecked_Conversion (XEvent, XButtonEvent);
    function To_Key is new Ada.Unchecked_Conversion (XEvent, XKeyEvent);
@@ -353,7 +371,7 @@ procedure Main is
          Trim (Natural (Scr_W)) & " " & Trim (Natural (Icon_W)) &
          "); y=$(albwasm /opt/alb/deskicons.wasm resolve_pos $ny " &
          Trim (Natural (Scr_H)) & " " & Trim (Natural (Icon_H)) &
-         "); echo \"$i $x $y\"; done < /tmp/ti_pos_in > /tmp/ti_pos_out 2>/dev/null"));
+         "); echo $i $x $y; done < /tmp/ti_pos_in > /tmp/ti_pos_out 2>/dev/null"));
 
       Ada.Text_IO.Open (F, Ada.Text_IO.In_File, "/tmp/ti_pos_out");
       while not Ada.Text_IO.End_Of_File (F) loop
@@ -492,7 +510,7 @@ procedure Main is
       B  : constant String := Name_String.To_String (Icons (I).Base);
       LI : constant Natural := Find (Layout, N_Layout, B);
       Buf : Icon_Images.Pixel_Buffer;
-      Pt  : aliased XPoint_Array (0 .. 0);
+      Pt  : aliased XPoint_Array := (0 .. 0 => (0, 0));
       Depth : Interfaces.C.int;
    begin
       if LI = 0
@@ -580,8 +598,7 @@ procedure Main is
    procedure Open_Sub is
       Attrs : aliased XSetWindowAttributes;
    begin
-      Attrs := (others => 0);
-      Attrs.Override_Redirect := 1;
+      Attrs := Base_Attrs;
       Attrs.Background_Pixel  := C_Menu_Bg;
       Sub_X := Menu_X + Menu_Wd - 2;
       Sub_Y := Menu_Y + Menu_Item_H * (Color_Item - 1) + 2;
@@ -617,8 +634,7 @@ procedure Main is
       if Menu_Y + Menu_Ht > Scr_H then
          Menu_Y := Scr_H - Menu_Ht - 2;
       end if;
-      Attrs := (others => 0);
-      Attrs.Override_Redirect := 1;
+      Attrs := Base_Attrs;
       Attrs.Background_Pixel  := C_Menu_Bg;
       Menu_Win := XCreateSimpleWindow
         (Dpy, Root, Menu_X, Menu_Y,
@@ -737,8 +753,7 @@ procedure Main is
       Dlg_Bad  := False;
       DX := (Scr_W - Dlg_Wd) / 2;
       DY := (Scr_H - Dlg_Ht) / 3;
-      Attrs := (others => 0);
-      Attrs.Override_Redirect := 1;
+      Attrs := Base_Attrs;
       Attrs.Background_Pixel  := C_Dlg_Bg;
       Dlg_Win := XCreateSimpleWindow
         (Dpy, Root, DX, DY,
@@ -857,8 +872,7 @@ procedure Main is
       Prop_Sel := 1;
       Prop_X := (Scr_W - Prop_Wd) / 2;
       Prop_Y := (Scr_H - Prop_Ht) / 3;
-      Attrs := (others => 0);
-      Attrs.Override_Redirect := 1;
+      Attrs := Base_Attrs;
       Attrs.Background_Pixel  := C_Dlg_Bg;
       Prop_Win := XCreateSimpleWindow
         (Dpy, Root, Prop_X, Prop_Y,

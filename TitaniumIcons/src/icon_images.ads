@@ -1,5 +1,4 @@
 package Icon_Images is
-   pragma SPARK_Mode (On);
 
    --  Icon image loader.  Two user-friendly formats, both trivially
    --  parseable with no external libs:
